@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -26,7 +25,6 @@ st.markdown("""
   - 下載含分群資訊的結果檔
 """)
 
-# Sidebar for user inputs
 st.sidebar.header("Settings")
 model_selection = st.sidebar.multiselect(
     "Select Clustering Methods",
@@ -46,7 +44,6 @@ run_analysis = st.button("🚀 執行分析")
 if uploaded_file is not None and run_analysis:
     try:
         df = pd.read_excel(uploaded_file)
-
         df["Vertical Shift"] = np.abs(df["Prox Up"] - df["Prox Down"])
         df["Horizontal Shift"] = np.abs(df["Prox Left"] - df["Prox Right"])
         df["Total Shift"] = df["Vertical Shift"] + df["Horizontal Shift"]
@@ -60,6 +57,7 @@ if uploaded_file is not None and run_analysis:
         fig_v, ax_v = plt.subplots(figsize=(10, 6))
         sns.heatmap(heatmap_data_v, cmap="YlGnBu", ax=ax_v)
         ax_v.invert_yaxis()
+        ax_v.invert_xaxis()
         ax_v.set_title("Max Vertical Shift Heatmap")
         st.pyplot(fig_v)
 
@@ -68,6 +66,7 @@ if uploaded_file is not None and run_analysis:
         fig_h, ax_h = plt.subplots(figsize=(10, 6))
         sns.heatmap(heatmap_data_h, cmap="YlOrBr", ax=ax_h)
         ax_h.invert_yaxis()
+        ax_h.invert_xaxis()
         ax_h.set_title("Max Horizontal Shift Heatmap")
         st.pyplot(fig_h)
 
@@ -101,7 +100,6 @@ if uploaded_file is not None and run_analysis:
             fig1, ax1 = plt.subplots(figsize=(10, 6))
             sns.scatterplot(data=die_shift_total, x="Col", y="Row", hue="KMeans_Cluster", palette="Set2", s=100, ax=ax1)
             ax1.invert_yaxis()
-            ax1.set_title(f"KMeans Clustering (K={k_value})")
             st.pyplot(fig1)
 
         if "DBSCAN" in model_selection:
@@ -113,7 +111,6 @@ if uploaded_file is not None and run_analysis:
             fig2, ax2 = plt.subplots(figsize=(10, 6))
             sns.scatterplot(data=die_shift_total, x="Col", y="Row", hue="DBSCAN_Cluster", palette="Set2", s=100, ax=ax2)
             ax2.invert_yaxis()
-            ax2.set_title(f"DBSCAN Clustering (eps={eps_value}, min_samples={min_samples})")
             st.pyplot(fig2)
 
         csv = die_shift_total.to_csv(index=False).encode("utf-8")
