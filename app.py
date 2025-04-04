@@ -7,6 +7,7 @@ import seaborn as sns
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
+from kneed import KneeLocator
 
 st.title("Probe Mark Shift Clustering App")
 
@@ -40,8 +41,9 @@ if "DBSCAN" in model_selection:
     min_samples = st.sidebar.slider("DBSCAN: min_samples", min_value=2, max_value=20, value=5, step=1)
 
 uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
+run_analysis = st.button("🚀 執行分析")
 
-if uploaded_file is not None:
+if uploaded_file is not None and run_analysis:
     try:
         df = pd.read_excel(uploaded_file)
 
@@ -73,15 +75,20 @@ if uploaded_file is not None:
             distances, _ = nbrs.kneighbors(features_scaled)
             k_distances = np.sort(distances[:, -1])
 
+            knee_locator = KneeLocator(range(len(k_distances)), k_distances, curve="convex", direction="increasing")
+            elbow_eps = k_distances[knee_locator.knee] if knee_locator.knee else None
+
             fig_k, ax_k = plt.subplots(figsize=(10, 4))
-            ax_k.plot(k_distances)
+            ax_k.plot(k_distances, label="K-distance")
+            if elbow_eps:
+                ax_k.axhline(y=elbow_eps, color="red", linestyle="--", label=f"Suggested eps ≈ {elbow_eps:.2f}")
             ax_k.set_title(f"K-distance plot (min_samples={min_samples})")
-            ax_k.set_ylabel("Distance to {}-th nearest neighbor".format(min_samples))
+            ax_k.set_ylabel(f"Distance to {min_samples}-th nearest neighbor")
             ax_k.set_xlabel("Points sorted by distance")
+            ax_k.legend()
             st.pyplot(fig_k)
 
         if "KMeans" in model_selection:
-            # Apply KMeans clustering
             kmeans = KMeans(n_clusters=k_value, random_state=42)
             clusters_kmeans = kmeans.fit_predict(features_scaled)
             die_shift["KMeans_Cluster"] = clusters_kmeans
@@ -94,7 +101,6 @@ if uploaded_file is not None:
             st.pyplot(fig1)
 
         if "DBSCAN" in model_selection:
-            # Apply DBSCAN clustering
             dbscan = DBSCAN(eps=eps_value, min_samples=min_samples)
             clusters_dbscan = dbscan.fit_predict(features_scaled)
             die_shift["DBSCAN_Cluster"] = clusters_dbscan
@@ -106,11 +112,10 @@ if uploaded_file is not None:
             ax2.set_title(f"DBSCAN Clustering (eps={eps_value}, min_samples={min_samples})")
             st.pyplot(fig2)
 
-        # Allow download of results
         csv = die_shift.to_csv(index=False).encode("utf-8")
         st.download_button("Download Clustered Data as CSV", csv, "clustered_die_data.csv", "text/csv")
 
     except Exception as e:
         st.error(f"Error: {str(e)}")
 else:
-    st.info("Please upload a probe mark Excel file to begin.")
+    st.info("Please upload a probe mark Excel file and click '執行分析' to begin.")
