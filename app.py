@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import NearestNeighbors
 
 st.title("Probe Mark Shift Clustering App")
 
@@ -20,6 +21,7 @@ st.markdown("""
 - 本工具可支援：
   - Total Shift 偏移量熱力圖
   - KMeans 與 DBSCAN 分群比較
+  - DBSCAN 自動分析 eps（K-distance plot）
   - 下載含分群資訊的結果檔
 """)
 
@@ -63,6 +65,20 @@ if uploaded_file is not None:
         # Standardize features
         scaler = StandardScaler()
         features_scaled = scaler.fit_transform(die_shift[["Col", "Row", "Total Shift"]])
+
+        # K-distance plot for DBSCAN
+        if "DBSCAN" in model_selection:
+            st.subheader("📐 K-distance Plot for DBSCAN (use to determine eps)")
+            nbrs = NearestNeighbors(n_neighbors=min_samples).fit(features_scaled)
+            distances, _ = nbrs.kneighbors(features_scaled)
+            k_distances = np.sort(distances[:, -1])
+
+            fig_k, ax_k = plt.subplots(figsize=(10, 4))
+            ax_k.plot(k_distances)
+            ax_k.set_title(f"K-distance plot (min_samples={min_samples})")
+            ax_k.set_ylabel("Distance to {}-th nearest neighbor".format(min_samples))
+            ax_k.set_xlabel("Points sorted by distance")
+            st.pyplot(fig_k)
 
         if "KMeans" in model_selection:
             # Apply KMeans clustering
