@@ -20,7 +20,7 @@ st.markdown("""
   - 總偏移 = 垂直偏移 + 水平偏移
 
 - 本工具可支援：
-  - Total Shift 偏移量熱力圖
+  - 垂直與水平最大偏移量熱力圖（每個 die）
   - KMeans 與 DBSCAN 分群比較
   - DBSCAN 自動分析 eps（K-distance plot）
   - 下載含分群資訊的結果檔
@@ -47,34 +47,38 @@ if uploaded_file is not None and run_analysis:
     try:
         df = pd.read_excel(uploaded_file)
 
-        # Calculate shift values
         df["Vertical Shift"] = np.abs(df["Prox Up"] - df["Prox Down"])
         df["Horizontal Shift"] = np.abs(df["Prox Left"] - df["Prox Right"])
         df["Total Shift"] = df["Vertical Shift"] + df["Horizontal Shift"]
 
-        # Group by die position and calculate mean shift
-        die_shift = df.groupby(["Row", "Col"])["Total Shift"].mean().reset_index()
+        die_shift_vert = df.groupby(["Row", "Col"])["Vertical Shift"].max().reset_index()
+        die_shift_horz = df.groupby(["Row", "Col"])["Horizontal Shift"].max().reset_index()
+        die_shift_total = df.groupby(["Row", "Col"])["Total Shift"].mean().reset_index()
 
-        # Heatmap visualization
-        st.subheader("Heatmap of Total Shift")
-        heatmap_data = die_shift.pivot(index="Row", columns="Col", values="Total Shift")
-        fig_hm, ax_hm = plt.subplots(figsize=(10, 6))
-        sns.heatmap(heatmap_data, cmap="YlOrRd", ax=ax_hm)
-        ax_hm.invert_yaxis()
-        ax_hm.set_title("Total Shift Heatmap")
-        st.pyplot(fig_hm)
+        st.subheader("🔻 Heatmap of Maximum Vertical Shift")
+        heatmap_data_v = die_shift_vert.pivot(index="Row", columns="Col", values="Vertical Shift")
+        fig_v, ax_v = plt.subplots(figsize=(10, 6))
+        sns.heatmap(heatmap_data_v, cmap="YlGnBu", ax=ax_v)
+        ax_v.invert_yaxis()
+        ax_v.set_title("Max Vertical Shift Heatmap")
+        st.pyplot(fig_v)
 
-        # Standardize features
+        st.subheader("➡️ Heatmap of Maximum Horizontal Shift")
+        heatmap_data_h = die_shift_horz.pivot(index="Row", columns="Col", values="Horizontal Shift")
+        fig_h, ax_h = plt.subplots(figsize=(10, 6))
+        sns.heatmap(heatmap_data_h, cmap="YlOrBr", ax=ax_h)
+        ax_h.invert_yaxis()
+        ax_h.set_title("Max Horizontal Shift Heatmap")
+        st.pyplot(fig_h)
+
         scaler = StandardScaler()
-        features_scaled = scaler.fit_transform(die_shift[["Col", "Row", "Total Shift"]])
+        features_scaled = scaler.fit_transform(die_shift_total[["Col", "Row", "Total Shift"]])
 
-        # K-distance plot for DBSCAN
         if "DBSCAN" in model_selection:
             st.subheader("📐 K-distance Plot for DBSCAN (use to determine eps)")
             nbrs = NearestNeighbors(n_neighbors=min_samples).fit(features_scaled)
             distances, _ = nbrs.kneighbors(features_scaled)
             k_distances = np.sort(distances[:, -1])
-
             knee_locator = KneeLocator(range(len(k_distances)), k_distances, curve="convex", direction="increasing")
             elbow_eps = k_distances[knee_locator.knee] if knee_locator.knee else None
 
@@ -91,11 +95,11 @@ if uploaded_file is not None and run_analysis:
         if "KMeans" in model_selection:
             kmeans = KMeans(n_clusters=k_value, random_state=42)
             clusters_kmeans = kmeans.fit_predict(features_scaled)
-            die_shift["KMeans_Cluster"] = clusters_kmeans
+            die_shift_total["KMeans_Cluster"] = clusters_kmeans
 
             st.subheader("KMeans Clustering")
             fig1, ax1 = plt.subplots(figsize=(10, 6))
-            sns.scatterplot(data=die_shift, x="Col", y="Row", hue="KMeans_Cluster", palette="Set2", s=100, ax=ax1)
+            sns.scatterplot(data=die_shift_total, x="Col", y="Row", hue="KMeans_Cluster", palette="Set2", s=100, ax=ax1)
             ax1.invert_yaxis()
             ax1.set_title(f"KMeans Clustering (K={k_value})")
             st.pyplot(fig1)
@@ -103,16 +107,16 @@ if uploaded_file is not None and run_analysis:
         if "DBSCAN" in model_selection:
             dbscan = DBSCAN(eps=eps_value, min_samples=min_samples)
             clusters_dbscan = dbscan.fit_predict(features_scaled)
-            die_shift["DBSCAN_Cluster"] = clusters_dbscan
+            die_shift_total["DBSCAN_Cluster"] = clusters_dbscan
 
             st.subheader("DBSCAN Clustering")
             fig2, ax2 = plt.subplots(figsize=(10, 6))
-            sns.scatterplot(data=die_shift, x="Col", y="Row", hue="DBSCAN_Cluster", palette="Set2", s=100, ax=ax2)
+            sns.scatterplot(data=die_shift_total, x="Col", y="Row", hue="DBSCAN_Cluster", palette="Set2", s=100, ax=ax2)
             ax2.invert_yaxis()
             ax2.set_title(f"DBSCAN Clustering (eps={eps_value}, min_samples={min_samples})")
             st.pyplot(fig2)
 
-        csv = die_shift.to_csv(index=False).encode("utf-8")
+        csv = die_shift_total.to_csv(index=False).encode("utf-8")
         st.download_button("Download Clustered Data as CSV", csv, "clustered_die_data.csv", "text/csv")
 
     except Exception as e:
