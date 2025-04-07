@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -57,7 +58,6 @@ if uploaded_file is not None and run_analysis:
         fig_v, ax_v = plt.subplots(figsize=(10, 6))
         sns.heatmap(heatmap_data_v, cmap="YlGnBu", ax=ax_v)
         ax_v.invert_yaxis()
-        ax_v.invert_xaxis()
         ax_v.set_title("Max Vertical Shift Heatmap")
         st.pyplot(fig_v)
 
@@ -66,7 +66,6 @@ if uploaded_file is not None and run_analysis:
         fig_h, ax_h = plt.subplots(figsize=(10, 6))
         sns.heatmap(heatmap_data_h, cmap="YlOrBr", ax=ax_h)
         ax_h.invert_yaxis()
-        ax_h.invert_xaxis()
         ax_h.set_title("Max Horizontal Shift Heatmap")
         st.pyplot(fig_h)
 
