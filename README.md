@@ -73,7 +73,3 @@ kneed
 - 資料處理：pandas, numpy
 
 ---
-
-## 📬 聯絡方式
-
-若有任何建議、錯誤回報或改進想法，歡迎透過 Issue 或 Pull Request 聯絡我。
