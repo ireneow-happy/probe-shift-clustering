@@ -1,102 +1,118 @@
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import NearestNeighbors
+from kneed import KneeLocator
 
-st.title("Wafer Probe Shift Analysis")
+st.title("Probe Mark Shift Clustering App")
 
 st.markdown("""
-### 📐 計算公式與欄位定義：
+**📘 計算邏輯與功能說明**
 
-- **Shift Direction 判斷**：取 `Prox Up`, `Prox Down`, `Prox Left`, `Prox Right` 中最小值所代表的方向。
+- 偏移量（偏心度）計算公式：
+  - 垂直偏移 = |Prox Up - Prox Down|
+  - 水平偏移 = |Prox Left - Prox Right|
 
-\[ \text{Shift Direction} = \min(\text{Prox Up}, \text{Prox Down}, \text{Prox Left}, \text{Prox Right}) \]
-
-- **Dominant Direction**：某一根針在所有觸點中最常出現的偏移方向
-- **Dominant %**：Dominant 方向出現的次數除以該針總觸點數
-
-- **On Rim Count**：觸點中有任一方向 Prox 為 0 的次數
-- **Rim %**：On Rim Count 除以總觸點數，代表偏到 pad 邊緣的嚴重程度
-
-#### ⬇️ 匯出欄位說明：
-- `Dut`, `Pad`：探針對應的 DUT 和 Pad 編號
-- `Up`, `Down`, `Left`, `Right`：各偏移方向出現次數
-- `Total`：該針的總觸點數
-- `Dominant`：主要偏移方向
-- `Dominant %`：主要方向佔比
-- `On Rim Count`：觸點在 pad 邊緣次數
-- `Rim %`：偏到邊緣的比例
+- 本工具可支援：
+  - 垂直或水平偏移分析（可選）
+  - 使用最大值或平均值分析（可選）
+  - 對選定偏移類型產生熱力圖與分群結果
+  - 支援 KMeans 與 DBSCAN 分群
+  - 匯出含分群資訊的結果檔
 """)
 
-uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx"])
+st.sidebar.header("分析參數")
+shift_type = st.sidebar.selectbox("選擇偏移方向", ["Vertical", "Horizontal"])
+agg_method = st.sidebar.selectbox("選擇統計方式", ["max", "mean"])
 
-if uploaded_file:
-    df = pd.read_excel(uploaded_file)
-    df = df.dropna(subset=['DUT#', 'Pad #'])
-    df['DUT+Pad'] = df['DUT#'].astype(int).astype(str) + '+' + df['Pad #'].astype(int).astype(str)
+st.sidebar.header("Clustering Settings")
+model_selection = st.sidebar.multiselect(
+    "Select Clustering Methods",
+    ["KMeans", "DBSCAN"],
+    default=["KMeans"]
+)
 
-    def detect_shift_direction(row):
-        directions = {
-            'Up': row['Prox Up'],
-            'Down': row['Prox Down'],
-            'Left': row['Prox Left'],
-            'Right': row['Prox Right']
-        }
-        return min(directions, key=directions.get)
+if "KMeans" in model_selection:
+    k_value = st.sidebar.number_input("KMeans: Number of Clusters (K)", min_value=2, max_value=20, value=3, step=1)
+if "DBSCAN" in model_selection:
+    eps_value = st.sidebar.slider("DBSCAN: eps (neighborhood size)", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
+    min_samples = st.sidebar.slider("DBSCAN: min_samples", min_value=2, max_value=20, value=5, step=1)
 
-    df['Shift Direction'] = df.apply(detect_shift_direction, axis=1)
-    direction_summary = df.groupby(['DUT+Pad', 'Shift Direction']).size().unstack(fill_value=0)
-    direction_summary['Total'] = direction_summary.sum(axis=1)
-    direction_columns = ['Up', 'Down', 'Left', 'Right']
-    direction_summary['Dominant'] = direction_summary[direction_columns].idxmax(axis=1)
-    direction_summary['Dominant %'] = direction_summary[direction_columns].max(axis=1) / direction_summary['Total']
+uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
+run_analysis = st.button("🚀 執行分析")
 
-    df['On Rim'] = df[['Prox Up', 'Prox Down', 'Prox Left', 'Prox Right']].min(axis=1) == 0
-    rim_summary = df.groupby('DUT+Pad')['On Rim'].agg(['sum', 'count'])
-    rim_summary['Rim %'] = rim_summary['sum'] / rim_summary['count']
-    rim_summary = rim_summary.rename(columns={'sum': 'On Rim Count', 'count': 'Total Count'})
+if uploaded_file is not None and run_analysis:
+    try:
+        df = pd.read_excel(uploaded_file)
+        df["Vertical Shift"] = np.abs(df["Prox Up"] - df["Prox Down"])
+        df["Horizontal Shift"] = np.abs(df["Prox Left"] - df["Prox Right"])
 
-    direction_summary = direction_summary.reset_index()
-    direction_summary[['Dut', 'Pad']] = direction_summary['DUT+Pad'].str.split('+', expand=True)
-    final_summary = direction_summary.merge(rim_summary, on='DUT+Pad', how='left')
-    final_summary = final_summary[['Dut', 'Pad', 'Up', 'Down', 'Left', 'Right', 'Total', 'Dominant', 'Dominant %', 'On Rim Count', 'Total Count', 'Rim %']]
-    final_summary = final_summary.sort_values(by='Rim %', ascending=False)
+        shift_column = "Vertical Shift" if shift_type == "Vertical" else "Horizontal Shift"
+        shift_label = "垂直" if shift_type == "Vertical" else "水平"
+        agg_func = agg_method
 
-    st.subheader("Probe Shift Summary")
-    st.dataframe(final_summary)
-    st.download_button("Download Result as CSV", final_summary.to_csv(index=False), file_name="probe_shift_summary.csv")
+        die_shift = df.groupby(["Row", "Col"])[shift_column].agg(agg_func).reset_index()
 
+        st.subheader(f"{shift_label}偏移量熱力圖 ({'最大值' if agg_func == 'max' else '平均值'})")
+        heatmap_data = die_shift.pivot(index="Row", columns="Col", values=shift_column)
+        heatmap_data = heatmap_data.sort_index(ascending=True).sort_index(axis=1, ascending=True)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.heatmap(heatmap_data, cmap="YlGnBu", ax=ax)
+        ax.set_title(f"{shift_label}偏移熱力圖 ({agg_func})")
+        st.pyplot(fig)
 
+        die_shift_clustering = die_shift.copy()
+        scaler = StandardScaler()
+        features_scaled = scaler.fit_transform(die_shift_clustering[["Col", "Row", shift_column]])
 
-# =====================================
-# 🔍 TD Order 偏移趨勢與劣化分析區段
-# =====================================
-st.subheader("TD Order Trend Analysis")
+        if "DBSCAN" in model_selection:
+            st.subheader("📐 K-distance Plot for DBSCAN (use to determine eps)")
+            nbrs = NearestNeighbors(n_neighbors=min_samples).fit(features_scaled)
+            distances, _ = nbrs.kneighbors(features_scaled)
+            k_distances = np.sort(distances[:, -1])
+            knee_locator = KneeLocator(range(len(k_distances)), k_distances, curve="convex", direction="increasing")
+            elbow_eps = k_distances[knee_locator.knee] if knee_locator.knee else None
 
-# 1. 計算 Vert / Horz Imbalance
-df['Vert Imbalance'] = (df['Prox Up'] - df['Prox Down']).abs()
-df['Horz Imbalance'] = (df['Prox Left'] - df['Prox Right']).abs()
+            fig_k, ax_k = plt.subplots(figsize=(10, 4))
+            ax_k.plot(k_distances, label="K-distance")
+            if elbow_eps:
+                ax_k.axhline(y=elbow_eps, color="red", linestyle="--", label=f"Suggested eps ≈ {elbow_eps:.2f}")
+            ax_k.set_title(f"K-distance plot (min_samples={min_samples})")
+            ax_k.set_ylabel(f"Distance to {min_samples}-th nearest neighbor")
+            ax_k.set_xlabel("Points sorted by distance")
+            ax_k.legend()
+            st.pyplot(fig_k)
 
-# 2. 顯示相關係數
-st.markdown("#### 📊 Pearson Correlation")
-from scipy.stats import pearsonr
+        if "KMeans" in model_selection:
+            kmeans = KMeans(n_clusters=k_value, random_state=42)
+            clusters_kmeans = kmeans.fit_predict(features_scaled)
+            die_shift_clustering["KMeans_Cluster"] = clusters_kmeans
 
-vert_corr, _ = pearsonr(df['TD Order'], df['Vert Imbalance'])
-horz_corr, _ = pearsonr(df['TD Order'], df['Horz Imbalance'])
+            st.subheader("KMeans Clustering")
+            fig1, ax1 = plt.subplots(figsize=(10, 6))
+            sns.scatterplot(data=die_shift_clustering, x="Col", y="Row", hue="KMeans_Cluster", palette="Set2", s=100, ax=ax1)
+            ax1.invert_yaxis()
+            st.pyplot(fig1)
 
-st.write(f"**TD Order vs. Vert Imbalance**: r = {vert_corr:.3f}")
-st.write(f"**TD Order vs. Horz Imbalance**: r = {horz_corr:.3f}")
+        if "DBSCAN" in model_selection:
+            dbscan = DBSCAN(eps=eps_value, min_samples=min_samples)
+            clusters_dbscan = dbscan.fit_predict(features_scaled)
+            die_shift_clustering["DBSCAN_Cluster"] = clusters_dbscan
 
-# 3. 劣化速度：每根針的回歸斜率
-st.markdown("#### 🔼 Probe Degradation Rate (Slope)")
+            st.subheader("DBSCAN Clustering")
+            fig2, ax2 = plt.subplots(figsize=(10, 6))
+            sns.scatterplot(data=die_shift_clustering, x="Col", y="Row", hue="DBSCAN_Cluster", palette="Set2", s=100, ax=ax2)
+            ax2.invert_yaxis()
+            st.pyplot(fig2)
 
-from scipy.stats import linregress
-def compute_slope(group):
-    if group['TD Order'].nunique() > 1:
-        slope, _, _, _, _ = linregress(group['TD Order'], group['Vert Imbalance'])
-        return slope
-    return None
+        csv = die_shift_clustering.to_csv(index=False).encode("utf-8")
+        st.download_button("Download Clustered Data as CSV", csv, "clustered_die_data.csv", "text/csv")
 
-slope_df = df.groupby('DUT+Pad').apply(compute_slope).dropna().reset_index()
-slope_df.columns = ['DUT+Pad', 'Vert Imbalance Slope']
-slope_df = slope_df.sort_values(by='Vert Imbalance Slope', ascending=False)
-
-st.dataframe(slope_df.head(10), use_container_width=True)
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+else:
+    st.info("Please upload a probe mark Excel file and click '執行分析' to begin.")
