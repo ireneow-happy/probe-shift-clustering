@@ -83,9 +83,14 @@ def main():
         min_samples = st.sidebar.slider(
             "DBSCAN: min_samples", min_value=2, max_value=20, value=5, step=1
         )
+        use_shift_feature = st.sidebar.checkbox(
+            "Include shift in DBSCAN features", value=True,
+            help="When enabled, DBSCAN uses (Row, Col, Shift) as features; when disabled, only (Row, Col) are used."
+        )
     else:
         eps_value = 0.5
         min_samples = 5
+        use_shift_feature = True
 
     uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
     run_button = st.button("🚀 執行分析")
@@ -161,7 +166,11 @@ def main():
                             df_fail["Horizontal Shift"] = np.abs(df_fail["Prox Left"] - df_fail["Prox Right"])
                             die_shift_fail = df_fail.groupby(["Row", "Col"])[shift_column].agg(agg_method).reset_index()
                             scaler_db = StandardScaler()
-                            features_fail = die_shift_fail[["Col", "Row", shift_column]].values
+                            # Choose features based on sidebar option
+                            if use_shift_feature:
+                                features_fail = die_shift_fail[["Col", "Row", shift_column]].values
+                            else:
+                                features_fail = die_shift_fail[["Col", "Row"]].values
                             features_scaled_fail = scaler_db.fit_transform(features_fail)
                             dbscan = DBSCAN(eps=float(eps_value), min_samples=int(min_samples))
                             clusters_dbscan = dbscan.fit_predict(features_scaled_fail)
@@ -239,9 +248,12 @@ def main():
         if die_shift_fail is not None and not die_shift_fail.empty:
             # K-distance plot to help choose eps
             st.subheader("📐 K-distance Plot for DBSCAN (Fail data)")
-            # Use the same shift column (there is only one shift column in die_shift_fail besides Row/Col/Cluster)
+            # Choose features for K-distance plot consistent with clustering
             shift_cols = [c for c in die_shift_fail.columns if c.endswith("Shift")]  # e.g. Vertical Shift or Horizontal Shift
-            features = die_shift_fail[["Col", "Row", shift_cols[0]]].values if shift_cols else die_shift_fail[["Col", "Row"]].values
+            if use_shift_feature and shift_cols:
+                features = die_shift_fail[["Col", "Row", shift_cols[0]]].values
+            else:
+                features = die_shift_fail[["Col", "Row"]].values
             scaler_kdist = StandardScaler()
             features_scaled = scaler_kdist.fit_transform(features)
             nbrs = NearestNeighbors(n_neighbors=max(1, int(min_samples))).fit(features_scaled)
