@@ -89,9 +89,15 @@ def clustering_analysis(df: pd.DataFrame):
         st.session_state['cluster_selected_labels'] = None
     if 'cluster_run_counter' not in st.session_state:
         st.session_state['cluster_run_counter'] = 0
+    # Store the last parameters used for clustering.  When parameters change
+    # without re‑running the analysis, we can detect stale results and prompt
+    # the user to run the analysis again.  Parameters include the shift type,
+    # aggregation method, selected methods and their hyperparameters.
+    if 'cluster_last_params' not in st.session_state:
+        st.session_state['cluster_last_params'] = None
 
     if run_clustering:
-        # Compute shifts
+        # Compute shifts and run clustering with the selected parameters.
         df = compute_shifts(df.copy())
         shift_col = "Vertical Shift" if shift_type == "Vertical" else "Horizontal Shift"
         # Aggregate shift per die
@@ -148,51 +154,80 @@ def clustering_analysis(df: pd.DataFrame):
             st.session_state['cluster_selected_labels'] = sorted(die_shift_fail["DBSCAN_Cluster"].unique())
         else:
             st.session_state['cluster_selected_labels'] = None
+        # Record the parameter values used for this run.
+        st.session_state['cluster_last_params'] = {
+            'shift_type': shift_type,
+            'agg_method': agg_method,
+            'methods': tuple(sorted(methods)),
+            'k_value': int(k_value) if "KMeans" in methods else None,
+            'eps_value': float(eps_value) if "DBSCAN" in methods else None,
+            'min_samples': int(min_samples) if "DBSCAN" in methods else None,
+            'use_shift_feature': bool(use_shift_feature) if "DBSCAN" in methods else None,
+        }
         st.success("群集分析完成。請使用下方的勾選框選擇群集。")
 
-    # Display results if available
+    # Display results if available and up to date
     if st.session_state['cluster_results'] is not None:
+        # Determine if current parameters match the last run.  If not, results
+        # are considered stale and will not be displayed until analysis is
+        # re‑run with the new parameters.
+        # Build current parameter signature
+        current_params = {
+            'shift_type': shift_type,
+            'agg_method': agg_method,
+            'methods': tuple(sorted(methods)),
+            'k_value': int(k_value) if "KMeans" in methods else None,
+            'eps_value': float(eps_value) if "DBSCAN" in methods else None,
+            'min_samples': int(min_samples) if "DBSCAN" in methods else None,
+            'use_shift_feature': bool(use_shift_feature) if "DBSCAN" in methods else None,
+        }
+        last_params = st.session_state.get('cluster_last_params')
+        params_match = (last_params == current_params)
         die_shift_clustering = st.session_state['cluster_results']
         die_shift_fail = st.session_state['cluster_fail']
-        # KMeans plot
-        if st.session_state['cluster_kmeans_used'] and "KMeans_Cluster" in die_shift_clustering.columns:
-            st.subheader("KMeans Clustering (all die)")
-            fig_km, ax_km = plt.subplots(figsize=(8, 6))
-            sns.scatterplot(
-                data=die_shift_clustering,
-                x="Col", y="Row", hue="KMeans_Cluster", palette="Set2", s=80, ax=ax_km
-            )
-            ax_km.invert_yaxis()
-            st.pyplot(fig_km)
-        # DBSCAN plot
-        if die_shift_fail is not None and not die_shift_fail.empty:
-            st.subheader("DBSCAN Clustering (Fail die only)")
-            unique_labels = sorted(die_shift_fail["DBSCAN_Cluster"].unique())
-            selected = st.session_state.get('cluster_selected_labels') or unique_labels
-            rc = st.session_state['cluster_run_counter']
-            # cluster selection checkboxes
-            st.markdown("**選擇要顯示的 DBSCAN 群集**")
-            new_selected = []
-            cols = st.columns(len(unique_labels))
-            for idx, lbl in enumerate(unique_labels):
-                default_checked = lbl in selected
-                key = f"cluster_cb_{lbl}_{rc}"
-                with cols[idx]:
-                    chk = st.checkbox(str(lbl), value=default_checked, key=key)
-                if chk:
-                    new_selected.append(lbl)
-            st.session_state['cluster_selected_labels'] = new_selected
-            # Filter and plot
-            filtered = die_shift_fail[die_shift_fail["DBSCAN_Cluster"].isin(new_selected)]
-            fig_db, ax_db = plt.subplots(figsize=(8, 6))
-            sns.scatterplot(
-                data=filtered, x="Col", y="Row", hue="DBSCAN_Cluster", palette="Set2", s=80, ax=ax_db
-            )
-            ax_db.invert_yaxis()
-            st.pyplot(fig_db)
-        # Download button
-        csv = die_shift_clustering.to_csv(index=False).encode("utf-8")
-        st.download_button("下載分群資料 CSV", csv, "clustered_die_data.csv", "text/csv")
+        if not params_match:
+            # Warn user that parameters changed and analysis must be rerun
+            st.info("分析參數已變更。請點擊『執行群集分析』以更新結果。先前的結果已暫停顯示。")
+        else:
+            # KMeans plot
+            if st.session_state['cluster_kmeans_used'] and "KMeans_Cluster" in die_shift_clustering.columns:
+                st.subheader("KMeans Clustering (all die)")
+                fig_km, ax_km = plt.subplots(figsize=(8, 6))
+                sns.scatterplot(
+                    data=die_shift_clustering,
+                    x="Col", y="Row", hue="KMeans_Cluster", palette="Set2", s=80, ax=ax_km
+                )
+                ax_km.invert_yaxis()
+                st.pyplot(fig_km)
+            # DBSCAN plot
+            if die_shift_fail is not None and not die_shift_fail.empty:
+                st.subheader("DBSCAN Clustering (Fail die only)")
+                unique_labels = sorted(die_shift_fail["DBSCAN_Cluster"].unique())
+                selected = st.session_state.get('cluster_selected_labels') or unique_labels
+                rc = st.session_state['cluster_run_counter']
+                # cluster selection checkboxes
+                st.markdown("**選擇要顯示的 DBSCAN 群集**")
+                new_selected = []
+                cols = st.columns(len(unique_labels))
+                for idx, lbl in enumerate(unique_labels):
+                    default_checked = lbl in selected
+                    key = f"cluster_cb_{lbl}_{rc}"
+                    with cols[idx]:
+                        chk = st.checkbox(str(lbl), value=default_checked, key=key)
+                    if chk:
+                        new_selected.append(lbl)
+                st.session_state['cluster_selected_labels'] = new_selected
+                # Filter and plot
+                filtered = die_shift_fail[die_shift_fail["DBSCAN_Cluster"].isin(new_selected)]
+                fig_db, ax_db = plt.subplots(figsize=(8, 6))
+                sns.scatterplot(
+                    data=filtered, x="Col", y="Row", hue="DBSCAN_Cluster", palette="Set2", s=80, ax=ax_db
+                )
+                ax_db.invert_yaxis()
+                st.pyplot(fig_db)
+            # Download button
+            csv = die_shift_clustering.to_csv(index=False).encode("utf-8")
+            st.download_button("下載分群資料 CSV", csv, "clustered_die_data.csv", "text/csv")
 
 
 def dut_analysis(df: pd.DataFrame):
