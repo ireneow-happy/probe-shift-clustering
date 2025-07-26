@@ -49,34 +49,42 @@ def compute_shifts(df: pd.DataFrame):
 
 
 def clustering_analysis(df: pd.DataFrame):
-    """Perform clustering analysis using KMeans and/or DBSCAN with interactive filtering."""
     st.header("Clustering Analysis")
     # Sidebar options for clustering
-    shift_type = st.sidebar.selectbox("偏移方向 (Clustering)", ["Vertical", "Horizontal"])
-    agg_method = st.sidebar.selectbox("統計方式 (Clustering)", ["max", "mean"])
+    shift_type = st.sidebar.selectbox("偏移方向 (Clustering)", ["Vertical", "Horizontal"], key="shift_type")
+    agg_method = st.sidebar.selectbox("統計方式 (Clustering)", ["max", "mean"], key="agg_method")
     methods = st.sidebar.multiselect(
-        "選擇群集方法", ["KMeans", "DBSCAN"], default=["KMeans"]
-    )
+        "選擇群集方法", ["KMeans", "DBSCAN"], default=["KMeans"], key="methods")
     if "KMeans" in methods:
         k_value = st.sidebar.number_input(
-            "KMeans: 群集數 K", min_value=2, max_value=20, value=3, step=1
-        )
+            "KMeans: 群集數 K", min_value=2, max_value=20, value=3, step=1, key="k_value")
     if "DBSCAN" in methods:
         eps_value = st.sidebar.slider(
-            "DBSCAN: eps", min_value=0.1, max_value=5.0, value=0.5, step=0.1
-        )
+            "DBSCAN: eps", min_value=0.1, max_value=5.0, value=0.5, step=0.1, key="eps_value")
         min_samples = st.sidebar.slider(
-            "DBSCAN: min_samples", min_value=2, max_value=20, value=5, step=1
-        )
+            "DBSCAN: min_samples", min_value=2, max_value=20, value=5, step=1, key="min_samples")
         use_shift_feature = st.sidebar.checkbox(
             "Include shift in DBSCAN features", value=True,
-            help="若取消勾選，DBSCAN 只使用 Row、Col 進行分群"
-        )
+            help="若取消勾選，DBSCAN 只使用 Row、Col 進行分群", key="use_shift_feature")
     else:
         eps_value = 0.5
         min_samples = 5
         use_shift_feature = True
     run_clustering = st.button("執行群集分析")
+
+    # --- Reset session_state if any sidebar option changed ---
+    option_keys = ["shift_type", "agg_method", "methods", "k_value", "eps_value", "min_samples", "use_shift_feature"]
+    for key in option_keys:
+        if st.session_state.get(f'last_{key}') != st.session_state.get(key):
+            st.session_state['cluster_results'] = None
+            st.session_state['cluster_fail'] = None
+            st.session_state['cluster_kmeans_used'] = False
+            st.session_state['cluster_selected_labels'] = None
+            st.session_state['cluster_run_counter'] = 0
+            break
+    # 記錄本次選項
+    for key in option_keys:
+        st.session_state[f'last_{key}'] = st.session_state.get(key)
 
     # Session state storage
     if 'cluster_results' not in st.session_state:
@@ -198,62 +206,81 @@ def clustering_analysis(df: pd.DataFrame):
 def dut_analysis(df: pd.DataFrame):
     """Perform DUT failure rate analysis and visualisation."""
     st.header("DUT 相關分析")
-    # Compute fail flag
-    df["Fail_Flag"] = (df["Pass/Fail"] == "Fail").astype(int)
-    # Group by DUT#
-    dut_summary = df.groupby("DUT#")["Fail_Flag"].agg(total_tests="count", total_fails="sum").reset_index()
-    dut_summary["fail_rate"] = dut_summary["total_fails"] / dut_summary["total_tests"]
-    # Sort by fail_rate
-    dut_summary = dut_summary.sort_values("fail_rate", ascending=False)
-    # Bar chart for fail rate
-    st.subheader("各 DUT 的失敗率")
-    fig_bar, ax_bar = plt.subplots(figsize=(8, 4))
-    sns.barplot(data=dut_summary, x="DUT#", y="fail_rate", palette="viridis", ax=ax_bar)
-    ax_bar.set_ylabel("Fail Rate")
-    ax_bar.set_xlabel("DUT#")
-    ax_bar.set_xticklabels(ax_bar.get_xticklabels(), rotation=90)
-    st.pyplot(fig_bar)
-    # Chi-square test: compare observed fail counts with expected under uniform failure rate
-    st.subheader("卡方檢定 (是否某些 DUT 的失敗數顯著偏高)")
-    total_fail = dut_summary["total_fails"].sum()
-    total_tests = dut_summary["total_tests"].sum()
-    expected = total_fail * dut_summary["total_tests"] / total_tests
-    chi_square = ((dut_summary["total_fails"] - expected) ** 2 / expected).sum()
-    # Degrees of freedom = number of DUTs - 1
-    dof = len(dut_summary) - 1
-    st.write(f"總失敗數: {total_fail}, 總測試數: {total_tests}, 自由度: {dof}")
-    st.write(f"卡方統計值 χ² = {chi_square:.2f}")
-    # Optionally, we could compute p-value using scipy, but avoid heavy dependencies
-    # Display summary table
-    st.dataframe(dut_summary)
-    # Plot fail map per DUT (optional): allow selecting specific DUTs
-    st.subheader("選擇 DUT 繪製失敗位置圖")
-    available_duts = dut_summary["DUT#"].tolist()
-    selected_duts = st.multiselect("選擇一個或多個 DUT", available_duts, default=available_duts[:3])
-    if selected_duts:
-        df_fail = df[df["Pass/Fail"] == "Fail"]
-        fig_map, ax_map = plt.subplots(figsize=(8, 6))
-        sns.scatterplot(
-            data=df_fail[df_fail["DUT#"].isin(selected_duts)],
-            x="Col", y="Row", hue="DUT#", palette="tab10", s=60, ax=ax_map
-        )
-        ax_map.invert_yaxis()
-        st.pyplot(fig_map)
+    # Sidebar for DUT analysis (可擴充)
+    run_dut = st.button("執行 DUT 分析")
+    # 監控選項（目前只有按鈕，若未來有更多選項可加入）
+    dut_option_keys = []  # 若有sidebar選項，填入key
+    for key in dut_option_keys:
+        if st.session_state.get(f'last_dut_{key}') != st.session_state.get(key):
+            st.session_state['dut_summary'] = None
+            st.session_state['dut_selected_duts'] = None
+            break
+    for key in dut_option_keys:
+        st.session_state[f'last_dut_{key}'] = st.session_state.get(key)
+    if 'dut_summary' not in st.session_state:
+        st.session_state['dut_summary'] = None
+    if 'dut_selected_duts' not in st.session_state:
+        st.session_state['dut_selected_duts'] = None
+    if run_dut:
+        df["Fail_Flag"] = (df["Pass/Fail"] == "Fail").astype(int)
+        dut_summary = df.groupby("DUT#")["Fail_Flag"].agg(total_tests="count", total_fails="sum").reset_index()
+        dut_summary["fail_rate"] = dut_summary["total_fails"] / dut_summary["total_tests"]
+        dut_summary = dut_summary.sort_values("fail_rate", ascending=False)
+        st.session_state['dut_summary'] = dut_summary
+        st.session_state['dut_selected_duts'] = dut_summary["DUT#"].tolist()[:3]
+        st.success("DUT 分析完成。請於下方選擇DUT繪圖。")
+    if st.session_state['dut_summary'] is not None:
+        dut_summary = st.session_state['dut_summary']
+        st.subheader("各 DUT 的失敗率")
+        fig_bar, ax_bar = plt.subplots(figsize=(8, 4))
+        sns.barplot(data=dut_summary, x="DUT#", y="fail_rate", palette="viridis", ax=ax_bar)
+        ax_bar.set_ylabel("Fail Rate")
+        ax_bar.set_xlabel("DUT#")
+        ax_bar.set_xticklabels(ax_bar.get_xticklabels(), rotation=90)
+        st.pyplot(fig_bar)
+        st.subheader("卡方檢定 (是否某些 DUT 的失敗數顯著偏高)")
+        total_fail = dut_summary["total_fails"].sum()
+        total_tests = dut_summary["total_tests"].sum()
+        expected = total_fail * dut_summary["total_tests"] / total_tests
+        chi_square = ((dut_summary["total_fails"] - expected) ** 2 / expected).sum()
+        dof = len(dut_summary) - 1
+        st.write(f"總失敗數: {total_fail}, 總測試數: {total_tests}, 自由度: {dof}")
+        st.write(f"卡方統計值 χ² = {chi_square:.2f}")
+        st.dataframe(dut_summary)
+        st.subheader("選擇 DUT 繪製失敗位置圖")
+        available_duts = dut_summary["DUT#"].tolist()
+        selected_duts = st.multiselect("選擇一個或多個 DUT", available_duts, default=st.session_state['dut_selected_duts'] if st.session_state['dut_selected_duts'] else available_duts[:3], key="dut_selected_duts")
+        st.session_state['dut_selected_duts'] = selected_duts
+        if selected_duts:
+            df_fail = df[df["Pass/Fail"] == "Fail"]
+            fig_map, ax_map = plt.subplots(figsize=(8, 6))
+            sns.scatterplot(
+                data=df_fail[df_fail["DUT#"].isin(selected_duts)],
+                x="Col", y="Row", hue="DUT#", palette="tab10", s=60, ax=ax_map
+            )
+            ax_map.invert_yaxis()
+            st.pyplot(fig_map)
 
 
 def trend_analysis(df: pd.DataFrame):
     """Analyse shift trends over TD Order."""
     st.header("趨勢分析")
-    # Compute shifts
-    df = compute_shifts(df.copy())
-    # Choose shift direction
-    shift_direction = st.selectbox("選擇偏移方向 (趨勢)", ["Vertical", "Horizontal"])
-    shift_col = "Vertical Shift" if shift_direction == "Vertical" else "Horizontal Shift"
-    # Choose prox direction to examine trend individually
-    prox_option = st.selectbox("選擇要分析的 proximity 方向", ["Up", "Down", "Left", "Right", "Shift"])
+    shift_direction = st.selectbox("選擇偏移方向 (趨勢)", ["Vertical", "Horizontal"], key="trend_shift_direction")
+    prox_option = st.selectbox("選擇要分析的 proximity 方向", ["Up", "Down", "Left", "Right", "Shift"], key="trend_prox_option")
     run_trend = st.button("執行趨勢分析")
+    # 監控選項
+    trend_option_keys = ["trend_shift_direction", "trend_prox_option"]
+    for key in trend_option_keys:
+        if st.session_state.get(f'last_{key}') != st.session_state.get(key):
+            st.session_state['trend_result'] = None
+            break
+    for key in trend_option_keys:
+        st.session_state[f'last_{key}'] = st.session_state.get(key)
+    if 'trend_result' not in st.session_state:
+        st.session_state['trend_result'] = None
     if run_trend:
-        # Prepare data
+        df = compute_shifts(df.copy())
+        shift_col = "Vertical Shift" if shift_direction == "Vertical" else "Horizontal Shift"
         df_fail = df[df["Pass/Fail"] == "Fail"].copy()
         if prox_option == "Shift":
             y = df_fail[shift_col]
@@ -269,25 +296,35 @@ def trend_analysis(df: pd.DataFrame):
                 y = df_fail["Prox Right"]
             y_label = f"Prox {prox_option}"
         x = df_fail["TD Order"]
-        # Drop NA
         mask = x.notna() & y.notna()
         x = x[mask]
         y = y[mask]
-        # Compute linear regression
         if len(x) > 1:
             lr = linregress(x, y)
-            st.write(f"回歸方程: {y_label} = {lr.slope:.4f} * TD Order + {lr.intercept:.4f}")
-            st.write(f"相關係數 R = {lr.rvalue:.4f}, p-value = {lr.pvalue:.4e}")
-            # Plot
-            fig_tr, ax_tr = plt.subplots(figsize=(8, 5))
-            ax_tr.scatter(x, y, alpha=0.3, label="Data points")
-            ax_tr.plot(x, lr.intercept + lr.slope * x, color='red', label="Fit line")
-            ax_tr.set_xlabel("TD Order")
-            ax_tr.set_ylabel(y_label)
-            ax_tr.legend()
-            st.pyplot(fig_tr)
+            st.session_state['trend_result'] = {
+                'x': x,
+                'y': y,
+                'slope': lr.slope,
+                'intercept': lr.intercept,
+                'rvalue': lr.rvalue,
+                'pvalue': lr.pvalue,
+                'y_label': y_label
+            }
+            st.success("趨勢分析完成。")
         else:
+            st.session_state['trend_result'] = None
             st.warning("資料不足以進行趨勢分析。")
+    if st.session_state['trend_result'] is not None:
+        res = st.session_state['trend_result']
+        st.write(f"回歸方程: {res['y_label']} = {res['slope']:.4f} * TD Order + {res['intercept']:.4f}")
+        st.write(f"相關係數 R = {res['rvalue']:.4f}, p-value = {res['pvalue']:.4e}")
+        fig_tr, ax_tr = plt.subplots(figsize=(8, 5))
+        ax_tr.scatter(res['x'], res['y'], alpha=0.3, label="Data points")
+        ax_tr.plot(res['x'], res['intercept'] + res['slope'] * res['x'], color='red', label="Fit line")
+        ax_tr.set_xlabel("TD Order")
+        ax_tr.set_ylabel(res['y_label'])
+        ax_tr.legend()
+        st.pyplot(fig_tr)
 
 
 def main():
