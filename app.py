@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -42,25 +41,31 @@ if analysis_type == "Clustering analysis" and "data" in st.session_state:
         use_shift = st.checkbox("Include shift in DBSCAN features")
 
     if st.button("執行群集分析"):
-        df_fail = df[df["Result"] == "Fail"]
-        features = ["Col", "Row"]
-        if use_shift:
-            if direction == "Vertical":
-                features.append("Prox Down")
-            elif direction == "Horizontal":
-                features.append("Prox Right")
+        if "Pass/Fail" not in df.columns:
+            st.error("資料中找不到 'Pass/Fail' 欄位，請確認 Excel 格式正確。")
+        else:
+            df_fail = df[df["Pass/Fail"] == "Fail"]
+            if df_fail.empty:
+                st.warning("資料中找不到任何 Fail 樣本，請檢查 'Pass/Fail' 欄位內容。")
+            else:
+                features = ["Col", "Row"]
+                if use_shift:
+                    if direction == "Vertical":
+                        features.append("Prox Down")
+                    elif direction == "Horizontal":
+                        features.append("Prox Right")
 
-        X = df_fail[features].fillna(0)
+                X = df_fail[features].fillna(0)
 
-        if "KMeans" in selected_methods:
-            kmeans = KMeans(n_clusters=k, n_init="auto")
-            df_fail["KMeans_Cluster"] = kmeans.fit_predict(X)
+                if "KMeans" in selected_methods:
+                    kmeans = KMeans(n_clusters=k, n_init="auto")
+                    df_fail["KMeans_Cluster"] = kmeans.fit_predict(X)
 
-        if "DBSCAN" in selected_methods:
-            dbscan = DBSCAN(eps=eps, min_samples=min_samples)
-            df_fail["DBSCAN_Cluster"] = dbscan.fit_predict(X)
+                if "DBSCAN" in selected_methods:
+                    dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+                    df_fail["DBSCAN_Cluster"] = dbscan.fit_predict(X)
 
-        st.session_state["df_fail"] = df_fail
+                st.session_state["df_fail"] = df_fail
 
     if "df_fail" in st.session_state:
         df_fail = st.session_state["df_fail"]
