@@ -192,11 +192,14 @@ if uploaded_file is not None and run_analysis:
                         # Use a horizontal layout for checkboxes to save space
                         cols = st.columns(len(unique_labels)) if unique_labels else [st]
                         for idx, label in enumerate(unique_labels):
-                            # Use a unique key to persist the checkbox state
+                            # Use a unique key to persist the checkbox state across reruns.
                             key = f"dbscan_cluster_{label}"
+                            # Initialize default state only on first run (when key not present).
+                            if key not in st.session_state:
+                                st.session_state[key] = True
                             with cols[idx]:
                                 checked = st.checkbox(
-                                    label=str(label), value=True, key=key
+                                    label=str(label), key=key
                                 )
                             if checked:
                                 selected_clusters.append(label)
