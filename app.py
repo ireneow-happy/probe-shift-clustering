@@ -34,7 +34,7 @@ from scipy.stats import chi2_contingency, linregress
 def load_excel(file) -> pd.DataFrame:
     """Read the uploaded Excel file into a DataFrame and ensure required columns exist."""
     df = pd.read_excel(file)
-    required_cols = {"Row", "Col", "Prox Up", "Prox Down", "Prox Left", "Prox Right", "Pass/Fail"}
+    required_cols = {"Row", "Col", "Prox Up", "Prox Down", "Prox Left", "Prox Right", "Pass/Fail", "DUT#", "TD Order"}
     missing = required_cols.difference(df.columns)
     if missing:
         raise ValueError(f"Missing columns: {missing}")
