@@ -15,7 +15,7 @@ probe mark data stored in an Excel file. Users can choose between:
    drifts over the TD Order sequence. Produces scatter plots with fitted
    regression lines and shows correlation statistics.
 
-Author: ChatGPT
+Author: Irene
 Date: 2025‑07‑26
 """
 
