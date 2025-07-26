@@ -184,11 +184,24 @@ if uploaded_file is not None and run_analysis:
                         clusters_dbscan = dbscan.fit_predict(features_scaled_fail)
                         die_shift_fail["DBSCAN_Cluster"] = clusters_dbscan
 
-                        # Plot DBSCAN result for fails
+                        # Allow users to filter specific clusters for display
+                        # Collect unique cluster labels (including noise labeled as -1)
+                        unique_labels = sorted(die_shift_fail["DBSCAN_Cluster"].unique())
+                        # Convert to strings for display; DBSCAN may return -1 for noise
+                        cluster_options = [str(label) for label in unique_labels]
+                        st.markdown("**選擇要顯示的 DBSCAN 群集** (可複選，預設顯示全部)")
+                        selected_options = st.multiselect(
+                            "Clusters to display", options=cluster_options, default=cluster_options
+                        )
+                        # Convert back to ints for filtering
+                        selected_clusters = [int(opt) for opt in selected_options]
+                        filtered_fail = die_shift_fail[die_shift_fail["DBSCAN_Cluster"].isin(selected_clusters)]
+
+                        # Plot DBSCAN result for the selected clusters
                         st.subheader("DBSCAN Clustering (Fail die only)")
                         fig2, ax2 = plt.subplots(figsize=(10, 6))
                         sns.scatterplot(
-                            data=die_shift_fail,
+                            data=filtered_fail,
                             x="Col",
                             y="Row",
                             hue="DBSCAN_Cluster",
