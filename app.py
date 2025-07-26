@@ -1,24 +1,3 @@
-"""
-Comprehensive Probe Mark Analysis App
-
-This Streamlit application allows users to perform different types of analysis on
-probe mark data stored in an Excel file. Users can choose between:
-
-1. **Clustering analysis**: Uses KMeans and/or DBSCAN to find spatial clusters of
-   failing dies, similar to the existing session‑based app. Results are stored in
-   session state to allow interactive filtering.
-2. **DUT analysis**: Computes failure rates per DUT#, displays a bar chart of
-   failure rates, allows mapping fails by DUT location, and performs a chi‑square
-   test to highlight DUTs whose failure counts significantly deviate from the
-   expected.
-3. **Trend analysis**: Examines whether probe mark shift (vertical or horizontal)
-   drifts over the TD Order sequence. Produces scatter plots with fitted
-   regression lines and shows correlation statistics.
-
-Author: ChatGPT
-Date: 2025‑07‑26
-"""
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -26,13 +5,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.preprocessing import StandardScaler
-from sklearn.neighbors import NearestNeighbors
-from kneed import KneeLocator
-from scipy.stats import chi2_contingency, linregress
-
 
 def load_excel(file) -> pd.DataFrame:
-    """Read the uploaded Excel file into a DataFrame and ensure required columns exist."""
     df = pd.read_excel(file)
     required_cols = {"Row", "Col", "Prox Up", "Prox Down", "Prox Left", "Prox Right", "Pass/Fail", "DUT#", "TD Order"}
     missing = required_cols.difference(df.columns)
@@ -40,17 +14,28 @@ def load_excel(file) -> pd.DataFrame:
         raise ValueError(f"Missing columns: {missing}")
     return df
 
-
 def compute_shifts(df: pd.DataFrame):
-    """Compute vertical and horizontal shift columns for the DataFrame."""
     df["Vertical Shift"] = np.abs(df["Prox Up"] - df["Prox Down"])
     df["Horizontal Shift"] = np.abs(df["Prox Left"] - df["Prox Right"])
     return df
 
-
-def clustering_analysis(df: pd.DataFrame):
-    st.header("Clustering Analysis")
-    # Sidebar options for clustering
+st.header("Clustering Analysis")
+uploaded_file = st.file_uploader("上傳包含 Probe Mark 資料的 Excel 檔", type=["xlsx"], key="clustering_uploaded_file")
+if 'clustering_last_uploaded_file' not in st.session_state or st.session_state['clustering_last_uploaded_file'] != uploaded_file:
+    st.session_state['cluster_results'] = None
+    st.session_state['cluster_fail'] = None
+    st.session_state['cluster_kmeans_used'] = False
+    st.session_state['cluster_selected_labels'] = None
+    st.session_state['cluster_run_counter'] = 0
+    st.session_state['clustering_last_uploaded_file'] = uploaded_file
+if uploaded_file is None:
+    st.info("請上傳檔案以進行分析。")
+else:
+    try:
+        df = load_excel(uploaded_file)
+    except Exception as e:
+        st.error(str(e))
+        st.stop()
     shift_type = st.sidebar.selectbox("偏移方向 (Clustering)", ["Vertical", "Horizontal"], key="shift_type")
     agg_method = st.sidebar.selectbox("統計方式 (Clustering)", ["max", "mean"], key="agg_method")
     methods = st.sidebar.multiselect(
@@ -71,8 +56,6 @@ def clustering_analysis(df: pd.DataFrame):
         min_samples = 5
         use_shift_feature = True
     run_clustering = st.button("執行群集分析")
-
-    # --- Reset session_state if any sidebar option changed ---
     option_keys = ["shift_type", "agg_method", "methods", "k_value", "eps_value", "min_samples", "use_shift_feature"]
     for key in option_keys:
         if st.session_state.get(f'last_{key}') != st.session_state.get(key):
@@ -82,11 +65,8 @@ def clustering_analysis(df: pd.DataFrame):
             st.session_state['cluster_selected_labels'] = None
             st.session_state['cluster_run_counter'] = 0
             break
-    # 記錄本次選項
     for key in option_keys:
         st.session_state[f'last_{key}'] = st.session_state.get(key)
-
-    # Session state storage
     if 'cluster_results' not in st.session_state:
         st.session_state['cluster_results'] = None
     if 'cluster_fail' not in st.session_state:
@@ -97,16 +77,11 @@ def clustering_analysis(df: pd.DataFrame):
         st.session_state['cluster_selected_labels'] = None
     if 'cluster_run_counter' not in st.session_state:
         st.session_state['cluster_run_counter'] = 0
-
     if run_clustering:
-        # Compute shifts
         df = compute_shifts(df.copy())
         shift_col = "Vertical Shift" if shift_type == "Vertical" else "Horizontal Shift"
-        # Aggregate shift per die
         die_shift = df.groupby(["Row", "Col"])[shift_col].agg(agg_method).reset_index()
-        # Prepare clustering df
         die_shift_clustering = die_shift.copy()
-        # KMeans
         if "KMeans" in methods:
             st.session_state['cluster_kmeans_used'] = True
             scaler_k = StandardScaler()
@@ -119,10 +94,8 @@ def clustering_analysis(df: pd.DataFrame):
             st.session_state['cluster_kmeans_used'] = False
             if "KMeans_Cluster" in die_shift_clustering.columns:
                 die_shift_clustering.drop(columns=["KMeans_Cluster"], inplace=True)
-        # DBSCAN on fails
         die_shift_fail = None
         if "DBSCAN" in methods:
-            # Filter fails
             df_fail = df[df["Pass/Fail"] == "Fail"].copy()
             df_fail = compute_shifts(df_fail)
             if df_fail.empty:
@@ -138,7 +111,6 @@ def clustering_analysis(df: pd.DataFrame):
                 db = DBSCAN(eps=float(eps_value), min_samples=int(min_samples))
                 db_labels = db.fit_predict(feats_scaled_fail)
                 die_shift_fail["DBSCAN_Cluster"] = db_labels
-                # Merge labels to all die data
                 die_shift_clustering = die_shift_clustering.merge(
                     die_shift_fail[["Row", "Col", "DBSCAN_Cluster"]],
                     on=["Row", "Col"], how="left"
@@ -147,22 +119,17 @@ def clustering_analysis(df: pd.DataFrame):
             die_shift_fail = None
             if "DBSCAN_Cluster" in die_shift_clustering.columns:
                 die_shift_clustering.drop(columns=["DBSCAN_Cluster"], inplace=True)
-        # Store results
         st.session_state['cluster_results'] = die_shift_clustering
         st.session_state['cluster_fail'] = die_shift_fail
         st.session_state['cluster_run_counter'] += 1
-        # Reset selected labels
         if die_shift_fail is not None and not die_shift_fail.empty:
             st.session_state['cluster_selected_labels'] = sorted(die_shift_fail["DBSCAN_Cluster"].unique())
         else:
             st.session_state['cluster_selected_labels'] = None
         st.success("群集分析完成。請使用下方的勾選框選擇群集。")
-
-    # Display results if available
     if st.session_state['cluster_results'] is not None:
         die_shift_clustering = st.session_state['cluster_results']
         die_shift_fail = st.session_state['cluster_fail']
-        # KMeans plot
         if st.session_state['cluster_kmeans_used'] and "KMeans_Cluster" in die_shift_clustering.columns:
             st.subheader("KMeans Clustering (all die)")
             fig_km, ax_km = plt.subplots(figsize=(8, 6))
@@ -172,13 +139,11 @@ def clustering_analysis(df: pd.DataFrame):
             )
             ax_km.invert_yaxis()
             st.pyplot(fig_km)
-        # DBSCAN plot
         if die_shift_fail is not None and not die_shift_fail.empty:
             st.subheader("DBSCAN Clustering (Fail die only)")
             unique_labels = sorted(die_shift_fail["DBSCAN_Cluster"].unique())
             selected = st.session_state.get('cluster_selected_labels') or unique_labels
             rc = st.session_state['cluster_run_counter']
-            # cluster selection checkboxes
             st.markdown("**選擇要顯示的 DBSCAN 群集**")
             new_selected = []
             cols = st.columns(len(unique_labels))
@@ -190,7 +155,6 @@ def clustering_analysis(df: pd.DataFrame):
                 if chk:
                     new_selected.append(lbl)
             st.session_state['cluster_selected_labels'] = new_selected
-            # Filter and plot
             filtered = die_shift_fail[die_shift_fail["DBSCAN_Cluster"].isin(new_selected)]
             fig_db, ax_db = plt.subplots(figsize=(8, 6))
             sns.scatterplot(
@@ -198,156 +162,5 @@ def clustering_analysis(df: pd.DataFrame):
             )
             ax_db.invert_yaxis()
             st.pyplot(fig_db)
-        # Download button
         csv = die_shift_clustering.to_csv(index=False).encode("utf-8")
-        st.download_button("下載分群資料 CSV", csv, "clustered_die_data.csv", "text/csv")
-
-
-def dut_analysis(df: pd.DataFrame):
-    """Perform DUT failure rate analysis and visualisation."""
-    st.header("DUT 相關分析")
-    # Sidebar for DUT analysis (可擴充)
-    run_dut = st.button("執行 DUT 分析")
-    # 監控選項（目前只有按鈕，若未來有更多選項可加入）
-    dut_option_keys = []  # 若有sidebar選項，填入key
-    for key in dut_option_keys:
-        if st.session_state.get(f'last_dut_{key}') != st.session_state.get(key):
-            st.session_state['dut_summary'] = None
-            st.session_state['dut_selected_duts'] = None
-            break
-    for key in dut_option_keys:
-        st.session_state[f'last_dut_{key}'] = st.session_state.get(key)
-    if 'dut_summary' not in st.session_state:
-        st.session_state['dut_summary'] = None
-    if 'dut_selected_duts' not in st.session_state:
-        st.session_state['dut_selected_duts'] = None
-    if run_dut:
-        df["Fail_Flag"] = (df["Pass/Fail"] == "Fail").astype(int)
-        dut_summary = df.groupby("DUT#")["Fail_Flag"].agg(total_tests="count", total_fails="sum").reset_index()
-        dut_summary["fail_rate"] = dut_summary["total_fails"] / dut_summary["total_tests"]
-        dut_summary = dut_summary.sort_values("fail_rate", ascending=False)
-        st.session_state['dut_summary'] = dut_summary
-        st.session_state['dut_selected_duts'] = dut_summary["DUT#"].tolist()[:3]
-        st.success("DUT 分析完成。請於下方選擇DUT繪圖。")
-    if st.session_state['dut_summary'] is not None:
-        dut_summary = st.session_state['dut_summary']
-        st.subheader("各 DUT 的失敗率")
-        fig_bar, ax_bar = plt.subplots(figsize=(8, 4))
-        sns.barplot(data=dut_summary, x="DUT#", y="fail_rate", palette="viridis", ax=ax_bar)
-        ax_bar.set_ylabel("Fail Rate")
-        ax_bar.set_xlabel("DUT#")
-        ax_bar.set_xticklabels(ax_bar.get_xticklabels(), rotation=90)
-        st.pyplot(fig_bar)
-        st.subheader("卡方檢定 (是否某些 DUT 的失敗數顯著偏高)")
-        total_fail = dut_summary["total_fails"].sum()
-        total_tests = dut_summary["total_tests"].sum()
-        expected = total_fail * dut_summary["total_tests"] / total_tests
-        chi_square = ((dut_summary["total_fails"] - expected) ** 2 / expected).sum()
-        dof = len(dut_summary) - 1
-        st.write(f"總失敗數: {total_fail}, 總測試數: {total_tests}, 自由度: {dof}")
-        st.write(f"卡方統計值 χ² = {chi_square:.2f}")
-        st.dataframe(dut_summary)
-        st.subheader("選擇 DUT 繪製失敗位置圖")
-        available_duts = dut_summary["DUT#"].tolist()
-        selected_duts = st.multiselect("選擇一個或多個 DUT", available_duts, default=st.session_state['dut_selected_duts'] if st.session_state['dut_selected_duts'] else available_duts[:3], key="dut_selected_duts")
-        st.session_state['dut_selected_duts'] = selected_duts
-        if selected_duts:
-            df_fail = df[df["Pass/Fail"] == "Fail"]
-            fig_map, ax_map = plt.subplots(figsize=(8, 6))
-            sns.scatterplot(
-                data=df_fail[df_fail["DUT#"].isin(selected_duts)],
-                x="Col", y="Row", hue="DUT#", palette="tab10", s=60, ax=ax_map
-            )
-            ax_map.invert_yaxis()
-            st.pyplot(fig_map)
-
-
-def trend_analysis(df: pd.DataFrame):
-    """Analyse shift trends over TD Order."""
-    st.header("趨勢分析")
-    shift_direction = st.selectbox("選擇偏移方向 (趨勢)", ["Vertical", "Horizontal"], key="trend_shift_direction")
-    prox_option = st.selectbox("選擇要分析的 proximity 方向", ["Up", "Down", "Left", "Right", "Shift"], key="trend_prox_option")
-    run_trend = st.button("執行趨勢分析")
-    # 監控選項
-    trend_option_keys = ["trend_shift_direction", "trend_prox_option"]
-    for key in trend_option_keys:
-        if st.session_state.get(f'last_{key}') != st.session_state.get(key):
-            st.session_state['trend_result'] = None
-            break
-    for key in trend_option_keys:
-        st.session_state[f'last_{key}'] = st.session_state.get(key)
-    if 'trend_result' not in st.session_state:
-        st.session_state['trend_result'] = None
-    if run_trend:
-        df = compute_shifts(df.copy())
-        shift_col = "Vertical Shift" if shift_direction == "Vertical" else "Horizontal Shift"
-        df_fail = df[df["Pass/Fail"] == "Fail"].copy()
-        if prox_option == "Shift":
-            y = df_fail[shift_col]
-            y_label = shift_col
-        else:
-            if prox_option == "Up":
-                y = df_fail["Prox Up"]
-            elif prox_option == "Down":
-                y = df_fail["Prox Down"]
-            elif prox_option == "Left":
-                y = df_fail["Prox Left"]
-            else:
-                y = df_fail["Prox Right"]
-            y_label = f"Prox {prox_option}"
-        x = df_fail["TD Order"]
-        mask = x.notna() & y.notna()
-        x = x[mask]
-        y = y[mask]
-        if len(x) > 1:
-            lr = linregress(x, y)
-            st.session_state['trend_result'] = {
-                'x': x,
-                'y': y,
-                'slope': lr.slope,
-                'intercept': lr.intercept,
-                'rvalue': lr.rvalue,
-                'pvalue': lr.pvalue,
-                'y_label': y_label
-            }
-            st.success("趨勢分析完成。")
-        else:
-            st.session_state['trend_result'] = None
-            st.warning("資料不足以進行趨勢分析。")
-    if st.session_state['trend_result'] is not None:
-        res = st.session_state['trend_result']
-        st.write(f"回歸方程: {res['y_label']} = {res['slope']:.4f} * TD Order + {res['intercept']:.4f}")
-        st.write(f"相關係數 R = {res['rvalue']:.4f}, p-value = {res['pvalue']:.4e}")
-        fig_tr, ax_tr = plt.subplots(figsize=(8, 5))
-        ax_tr.scatter(res['x'], res['y'], alpha=0.3, label="Data points")
-        ax_tr.plot(res['x'], res['intercept'] + res['slope'] * res['x'], color='red', label="Fit line")
-        ax_tr.set_xlabel("TD Order")
-        ax_tr.set_ylabel(res['y_label'])
-        ax_tr.legend()
-        st.pyplot(fig_tr)
-
-
-def main():
-    st.title("Probe Mark Analysis App")
-    st.markdown("""本應用提供多種分析模式：群集分析、DUT 相關分析與趨勢分析。請從左側選擇模式並上傳資料。""")
-    analysis_type = st.sidebar.radio("選擇分析類型", ["Clustering analysis", "DUT analysis", "Trend analysis"])
-    uploaded_file = st.file_uploader("上傳包含 Probe Mark 資料的 Excel 檔", type=["xlsx"])
-    if uploaded_file is None:
-        st.info("請上傳檔案以進行分析。")
-        return
-    try:
-        df = load_excel(uploaded_file)
-    except Exception as e:
-        st.error(str(e))
-        return
-    # Dispatch to analysis type
-    if analysis_type == "Clustering analysis":
-        clustering_analysis(df)
-    elif analysis_type == "DUT analysis":
-        dut_analysis(df)
-    else:
-        trend_analysis(df)
-
-
-if __name__ == "__main__":
-    main()
+        st.download_button("下載分群資料 CSV", csv, "clustered_die_data.csv", "text/csv") 
