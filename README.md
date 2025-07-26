@@ -1,75 +1,51 @@
-# 🔍 Probe Mark Shift Clustering App
+# Probe Mark Analysis App
 
-本專案是一個用於晶圓探針偏移量分析的視覺化工具，基於 [Streamlit](https://streamlit.io/) 架構開發。使用者可上傳探針資料檔案，自行選擇分析方向與統計方式，並使用 KMeans 或 DBSCAN 模型進行聚類分析與視覺化呈現。
-
----
-
-## 📦 功能特色
-
-- 計算探針偏移量：
-  - 垂直偏移 = |Prox Up - Prox Down|
-  - 水平偏移 = |Prox Left - Prox Right|
-- 熱力圖呈現偏移分布（支援最大值與平均值）
-- 支援兩種聚類模型：KMeans 與 DBSCAN
-- 自動產生 K-distance plot（輔助選擇 DBSCAN 的 eps 參數）
-- 匯出聚類結果為 CSV 檔案
+本應用提供三種分析模式，協助使用者進行 Probe Mark 資料分析：
 
 ---
 
-## 🚀 使用說明
+## 🔍 可選擇的分析類型
 
-### 1. 安裝相依套件
+### 1. Clustering analysis
+使用 DBSCAN 和 KMeans 進行失敗 die 的群集分析。可視化顯示各群集於 wafer 上的分布。
 
-請使用 Python 3.8+，建議建立虛擬環境並安裝：
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. 執行程式
-
-```bash
-streamlit run app.py
-```
-
-### 3. 上傳檔案格式
-
-請上傳一個包含以下欄位的 `.xlsx` Excel 檔案：
-
-| Row | Col | Prox Up | Prox Down | Prox Left | Prox Right |
-|-----|-----|---------|-----------|-----------|------------|
+- 可設定參數：
+  - 偏移方向（Vertical / Horizontal）
+  - 統計方式（max / average）
+  - 使用者可自選 clustering 方法（DBSCAN、KMeans）
+  - DBSCAN: `eps` 和 `min_samples`
+  - KMeans: 群集數 `K`
+- 可用 checkbox 選擇要顯示哪些群集
 
 ---
 
-## 🖼 畫面說明
+### 2. DUT analysis
+針對 Probe Card 上的 DUT# 分析其失敗率與分布情形。
 
-- 📊 偏移量熱力圖（垂直或水平）
-- 🧩 KMeans 聚類圖
-- 🧩 DBSCAN 聚類圖
-- 📐 DBSCAN K-distance plot
-- 📥 下載含聚類資訊的 CSV
-
----
-
-## 📁 requirements.txt
-
-```txt
-streamlit
-pandas
-numpy
-matplotlib
-seaborn
-scikit-learn
-openpyxl
-kneed
-```
+- 分析項目：
+  - 計算每個 DUT# 的失敗率
+  - 依照 DUT# 繪製 fail 分布地圖
+  - 進行統計檢定以確認是否有顯著差異
 
 ---
 
-## 🛠 技術架構
+### 3. Trend analysis
+針對測試順序（TD Order）進行時間序列趨勢分析。
 
-- 前端：Streamlit
-- 分析套件：scikit-learn, seaborn, matplotlib
-- 資料處理：pandas, numpy
+- 以 shift 方向（Up / Down / Left / Right）觀察 probe mark 是否有偏移趨勢
+- 可視化 shift vs. TD Order 的關係圖
+- 檢查是否出現系統性偏移
 
 ---
+
+## ⚙️ 操作說明
+
+1. 左側選擇分析模式後，會顯示該模式對應的參數設定區。
+2. 設定參數後，**必須點擊「執行群集分析」按鈕**，才會真正進行運算與繪圖。
+3. 若使用互動式版本，勾選或取消群集會觸發頁面 rerun，但分析結果會儲存在 `session_state` 中，不會重新計算。
+4. Trend 分析模式中可使用 K-distance 曲線來協助設定 DBSCAN `eps` 值。
+5. 所有圖表都會以 Fail die 為主體進行分析與過濾。
+
+---
+
+如有需要，可依需求擴充支援更多欄位與分析邏輯。
