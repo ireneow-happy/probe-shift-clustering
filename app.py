@@ -184,17 +184,23 @@ if uploaded_file is not None and run_analysis:
                         clusters_dbscan = dbscan.fit_predict(features_scaled_fail)
                         die_shift_fail["DBSCAN_Cluster"] = clusters_dbscan
 
-                        # Allow users to filter specific clusters for display
-                        # Collect unique cluster labels (including noise labeled as -1)
+                        # Allow users to filter specific clusters for display using individual checkboxes
                         unique_labels = sorted(die_shift_fail["DBSCAN_Cluster"].unique())
-                        # Convert to strings for display; DBSCAN may return -1 for noise
-                        cluster_options = [str(label) for label in unique_labels]
-                        st.markdown("**選擇要顯示的 DBSCAN 群集** (可複選，預設顯示全部)")
-                        selected_options = st.multiselect(
-                            "Clusters to display", options=cluster_options, default=cluster_options
-                        )
-                        # Convert back to ints for filtering
-                        selected_clusters = [int(opt) for opt in selected_options]
+                        st.markdown("**選擇要顯示的 DBSCAN 群集** (透過勾選方塊，可複選)\n")
+                        # Create a checkbox for each cluster label; default all True
+                        selected_clusters = []
+                        # Use a horizontal layout for checkboxes to save space
+                        cols = st.columns(len(unique_labels)) if unique_labels else [st]
+                        for idx, label in enumerate(unique_labels):
+                            # Use a unique key to persist the checkbox state
+                            key = f"dbscan_cluster_{label}"
+                            with cols[idx]:
+                                checked = st.checkbox(
+                                    label=str(label), value=True, key=key
+                                )
+                            if checked:
+                                selected_clusters.append(label)
+                        # Filter fail data based on selected clusters
                         filtered_fail = die_shift_fail[die_shift_fail["DBSCAN_Cluster"].isin(selected_clusters)]
 
                         # Plot DBSCAN result for the selected clusters
