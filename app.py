@@ -15,7 +15,7 @@ probe mark data stored in an Excel file. Users can choose between:
    drifts over the TD Order sequence. Produces scatter plots with fitted
    regression lines and shows correlation statistics.
 
-Author: ChatGPT
+Author: Irene
 Date: 2025‑07‑26
 """
 
@@ -197,14 +197,13 @@ def dut_analysis(df: pd.DataFrame):
         st.dataframe(dut_summary)
         st.subheader("選擇 DUT 繪製失敗位置圖")
         available_duts = dut_summary["DUT#"].tolist()
-        # 修復：正確處理預設值，避免 session_state 衝突
-        default_selection = st.session_state.get('dut_selected_duts', available_duts[:3])
-        # 確保預設選擇都在可用選項中
-        default_selection = [dut for dut in default_selection if dut in available_duts]
-        if not default_selection and available_duts:
-            default_selection = available_duts[:3]
         
-        selected_duts = st.multiselect("選擇一個或多個 DUT", available_duts, default=default_selection, key="dut_selected_duts")
+        # 簡化邏輯：直接使用 multiselect，讓 Streamlit 自動管理狀態
+        selected_duts = st.multiselect("選擇一個或多個 DUT", available_duts, key="dut_selected_duts")
+        
+        # 如果沒有選擇，使用前三個 DUT
+        if not selected_duts and available_duts:
+            selected_duts = available_duts[:3]
         
         if selected_duts:
             df_fail = df[df["Pass/Fail"] == "Fail"]
