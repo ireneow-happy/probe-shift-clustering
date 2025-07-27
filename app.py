@@ -15,7 +15,7 @@ probe mark data stored in an Excel file. Users can choose between:
    drifts over the TD Order sequence. Produces scatter plots with fitted
    regression lines and shows correlation statistics.
 
-Author: Irene
+Author: ChatGPT
 Date: 2025‑07‑26
 """
 
@@ -63,28 +63,20 @@ def clustering_analysis(df: pd.DataFrame):
         min_samples = 5
         use_shift_feature = True
     run_clustering = st.button("執行群集分析")
-    option_keys = ["shift_type", "agg_method", "methods", "k_value", "eps_value", "min_samples", "use_shift_feature"]
-    for key in option_keys:
-        if st.session_state.get(f'last_{key}') != st.session_state.get(key):
+    
+    # 簡化檢查邏輯：只在按鈕按下時才檢查選項變動
+    if run_clustering:
+        # 檢查是否有選項變動，如果有則清空結果
+        current_options = (shift_type, agg_method, tuple(methods), k_value, eps_value, min_samples, use_shift_feature)
+        if st.session_state.get('last_clustering_options') != current_options:
             st.session_state['cluster_results'] = None
             st.session_state['cluster_fail'] = None
             st.session_state['cluster_kmeans_used'] = False
             st.session_state['cluster_selected_labels'] = None
             st.session_state['cluster_run_counter'] = 0
-            break
-    for key in option_keys:
-        st.session_state[f'last_{key}'] = st.session_state.get(key)
-    if 'cluster_results' not in st.session_state:
-        st.session_state['cluster_results'] = None
-    if 'cluster_fail' not in st.session_state:
-        st.session_state['cluster_fail'] = None
-    if 'cluster_kmeans_used' not in st.session_state:
-        st.session_state['cluster_kmeans_used'] = False
-    if 'cluster_selected_labels' not in st.session_state:
-        st.session_state['cluster_selected_labels'] = None
-    if 'cluster_run_counter' not in st.session_state:
-        st.session_state['cluster_run_counter'] = 0
-    if run_clustering:
+        st.session_state['last_clustering_options'] = current_options
+        
+        # 執行分析
         df = compute_shifts(df.copy())
         shift_col = "Vertical Shift" if shift_type == "Vertical" else "Horizontal Shift"
         die_shift = df.groupby(["Row", "Col"])[shift_col].agg(agg_method).reset_index()
@@ -134,10 +126,12 @@ def clustering_analysis(df: pd.DataFrame):
         else:
             st.session_state['cluster_selected_labels'] = None
         st.success("群集分析完成。請使用下方的勾選框選擇群集。")
-    if st.session_state['cluster_results'] is not None:
+    
+    # 顯示結果（只在有結果時顯示）
+    if st.session_state.get('cluster_results') is not None:
         die_shift_clustering = st.session_state['cluster_results']
         die_shift_fail = st.session_state['cluster_fail']
-        if st.session_state['cluster_kmeans_used'] and "KMeans_Cluster" in die_shift_clustering.columns:
+        if st.session_state.get('cluster_kmeans_used') and "KMeans_Cluster" in die_shift_clustering.columns:
             st.subheader("KMeans Clustering (all die)")
             fig_km, ax_km = plt.subplots(figsize=(8, 6))
             sns.scatterplot(
@@ -150,7 +144,7 @@ def clustering_analysis(df: pd.DataFrame):
             st.subheader("DBSCAN Clustering (Fail die only)")
             unique_labels = sorted(die_shift_fail["DBSCAN_Cluster"].unique())
             selected = st.session_state.get('cluster_selected_labels') or unique_labels
-            rc = st.session_state['cluster_run_counter']
+            rc = st.session_state.get('cluster_run_counter', 0)
             st.markdown("**選擇要顯示的 DBSCAN 群集**")
             new_selected = []
             cols = st.columns(len(unique_labels))
@@ -175,10 +169,6 @@ def clustering_analysis(df: pd.DataFrame):
 def dut_analysis(df: pd.DataFrame):
     st.header("DUT 相關分析")
     run_dut = st.button("執行 DUT 分析")
-    if 'dut_summary' not in st.session_state:
-        st.session_state['dut_summary'] = None
-    if 'dut_selected_duts' not in st.session_state:
-        st.session_state['dut_selected_duts'] = None
     if run_dut:
         df["Fail_Flag"] = (df["Pass/Fail"] == "Fail").astype(int)
         dut_summary = df.groupby("DUT#")["Fail_Flag"].agg(total_tests="count", total_fails="sum").reset_index()
@@ -187,7 +177,7 @@ def dut_analysis(df: pd.DataFrame):
         st.session_state['dut_summary'] = dut_summary
         st.session_state['dut_selected_duts'] = dut_summary["DUT#"].tolist()[:3]
         st.success("DUT 分析完成。請於下方選擇DUT繪圖。")
-    if st.session_state['dut_summary'] is not None:
+    if st.session_state.get('dut_summary') is not None:
         dut_summary = st.session_state['dut_summary']
         st.subheader("各 DUT 的失敗率")
         fig_bar, ax_bar = plt.subplots(figsize=(8, 4))
@@ -207,8 +197,15 @@ def dut_analysis(df: pd.DataFrame):
         st.dataframe(dut_summary)
         st.subheader("選擇 DUT 繪製失敗位置圖")
         available_duts = dut_summary["DUT#"].tolist()
-        selected_duts = st.multiselect("選擇一個或多個 DUT", available_duts, default=st.session_state['dut_selected_duts'] if st.session_state['dut_selected_duts'] else available_duts[:3], key="dut_selected_duts")
-        st.session_state['dut_selected_duts'] = selected_duts
+        # 修復：正確處理預設值，避免 session_state 衝突
+        default_selection = st.session_state.get('dut_selected_duts', available_duts[:3])
+        # 確保預設選擇都在可用選項中
+        default_selection = [dut for dut in default_selection if dut in available_duts]
+        if not default_selection and available_duts:
+            default_selection = available_duts[:3]
+        
+        selected_duts = st.multiselect("選擇一個或多個 DUT", available_duts, default=default_selection, key="dut_selected_duts")
+        
         if selected_duts:
             df_fail = df[df["Pass/Fail"] == "Fail"]
             fig_map, ax_map = plt.subplots(figsize=(8, 6))
@@ -224,16 +221,14 @@ def trend_analysis(df: pd.DataFrame):
     shift_direction = st.selectbox("選擇偏移方向 (趨勢)", ["Vertical", "Horizontal"], key="trend_shift_direction")
     prox_option = st.selectbox("選擇要分析的 proximity 方向", ["Up", "Down", "Left", "Right", "Shift"], key="trend_prox_option")
     run_trend = st.button("執行趨勢分析")
-    trend_option_keys = ["trend_shift_direction", "trend_prox_option"]
-    for key in trend_option_keys:
-        if st.session_state.get(f'last_{key}') != st.session_state.get(key):
-            st.session_state['trend_result'] = None
-            break
-    for key in trend_option_keys:
-        st.session_state[f'last_{key}'] = st.session_state.get(key)
-    if 'trend_result' not in st.session_state:
-        st.session_state['trend_result'] = None
+    
     if run_trend:
+        # 檢查選項是否變動
+        current_trend_options = (shift_direction, prox_option)
+        if st.session_state.get('last_trend_options') != current_trend_options:
+            st.session_state['trend_result'] = None
+        st.session_state['last_trend_options'] = current_trend_options
+        
         df = compute_shifts(df.copy())
         shift_col = "Vertical Shift" if shift_direction == "Vertical" else "Horizontal Shift"
         df_fail = df[df["Pass/Fail"] == "Fail"].copy()
@@ -269,7 +264,7 @@ def trend_analysis(df: pd.DataFrame):
         else:
             st.session_state['trend_result'] = None
             st.warning("資料不足以進行趨勢分析。")
-    if st.session_state['trend_result'] is not None:
+    if st.session_state.get('trend_result') is not None:
         res = st.session_state['trend_result']
         st.write(f"回歸方程: {res['y_label']} = {res['slope']:.4f} * TD Order + {res['intercept']:.4f}")
         st.write(f"相關係數 R = {res['rvalue']:.4f}, p-value = {res['pvalue']:.4e}")
@@ -286,16 +281,15 @@ def main():
     st.markdown("本應用提供多種分析模式：群集分析、DUT 相關分析與趨勢分析。請從左側選擇模式並上傳資料。")
     analysis_type = st.sidebar.radio("選擇分析類型", ["Clustering analysis", "DUT analysis", "Trend analysis"])
     uploaded_file = st.file_uploader("上傳包含 Probe Mark 資料的 Excel 檔", type=["xlsx"], key="uploaded_file")
-    if 'last_uploaded_file' not in st.session_state or st.session_state['last_uploaded_file'] != uploaded_file:
-        st.session_state['cluster_results'] = None
-        st.session_state['cluster_fail'] = None
-        st.session_state['cluster_kmeans_used'] = False
-        st.session_state['cluster_selected_labels'] = None
-        st.session_state['cluster_run_counter'] = 0
-        st.session_state['dut_summary'] = None
-        st.session_state['dut_selected_duts'] = None
-        st.session_state['trend_result'] = None
+    
+    # 簡化檔案變動檢查
+    if uploaded_file is not None and st.session_state.get('last_uploaded_file') != uploaded_file:
+        # 清空所有分析結果
+        for key in ['cluster_results', 'cluster_fail', 'cluster_kmeans_used', 'cluster_selected_labels', 
+                   'cluster_run_counter', 'dut_summary', 'dut_selected_duts', 'trend_result']:
+            st.session_state[key] = None
         st.session_state['last_uploaded_file'] = uploaded_file
+    
     if uploaded_file is None:
         st.info("請上傳檔案以進行分析。")
         return
