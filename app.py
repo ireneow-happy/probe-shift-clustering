@@ -16,9 +16,8 @@ probe mark data stored in an Excel file. Users can choose between:
    regression lines and shows correlation statistics.
 
 Author: Irene
-Date: 2025‑07‑26
+Date: 2025‑07‑27
 """
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -216,10 +215,10 @@ def dut_analysis(df: pd.DataFrame):
             st.pyplot(fig_map)
 
 def trend_analysis(df: pd.DataFrame):
-    st.header("趨勢分析")
-    shift_direction = st.selectbox("選擇偏移方向 (趨勢)", ["Vertical", "Horizontal"], key="trend_shift_direction")
+    st.header("TD 分析")
+    shift_direction = st.selectbox("選擇偏移方向 (TD)", ["Vertical", "Horizontal"], key="trend_shift_direction")
     prox_option = st.selectbox("選擇要分析的 proximity 方向", ["Up", "Down", "Left", "Right", "Shift"], key="trend_prox_option")
-    run_trend = st.button("執行趨勢分析")
+    run_trend = st.button("執行 TD 分析")
     
     if run_trend:
         # 檢查選項是否變動
@@ -259,10 +258,10 @@ def trend_analysis(df: pd.DataFrame):
                 'pvalue': lr.pvalue,
                 'y_label': y_label
             }
-            st.success("趨勢分析完成。")
+            st.success("TD 分析完成。")
         else:
             st.session_state['trend_result'] = None
-            st.warning("資料不足以進行趨勢分析。")
+            st.warning("資料不足以進行 TD 分析。")
     if st.session_state.get('trend_result') is not None:
         res = st.session_state['trend_result']
         st.write(f"回歸方程: {res['y_label']} = {res['slope']:.4f} * TD Order + {res['intercept']:.4f}")
@@ -277,8 +276,8 @@ def trend_analysis(df: pd.DataFrame):
 
 def main():
     st.title("Probe Mark Analysis App")
-    st.markdown("本應用提供多種分析模式：群集分析、DUT 相關分析與趨勢分析。請從左側選擇模式並上傳資料。")
-    analysis_type = st.sidebar.radio("選擇分析類型", ["Clustering analysis", "DUT analysis", "Trend analysis"])
+    st.markdown("本應用提供多種分析模式：群集分析、DUT 相關分析與 TD 分析。請從左側選擇模式並上傳資料。")
+    analysis_type = st.sidebar.radio("選擇分析類型", ["Clustering analysis", "DUT analysis", "TD Analysis"])
     uploaded_file = st.file_uploader("上傳包含 Probe Mark 資料的 Excel 檔", type=["xlsx"], key="uploaded_file")
     
     # 簡化檔案變動檢查
